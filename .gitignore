@@ -1,0 +1,4 @@
+*.gv
+*.png
+coverage.out
+.idea/
