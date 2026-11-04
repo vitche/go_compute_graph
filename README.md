@@ -1,4 +1,4 @@
-# Compute Graph for Golang
+# Golang Compute Graph
 
 A Go implementation of the [Python Compute Graph](https://github.com/vitche/python-compute-graph) (`compute_graph`):
 a minimalist dataflow framework in which **nodes** exchange lists of values through **synapses**, are assembled into
@@ -21,27 +21,27 @@ package requires the Graphviz `dot` executable on `PATH`.
 
 ## Package layout
 
-| Python module                    | Go package                                          | Contents                                                                  |
-|----------------------------------|-----------------------------------------------------|---------------------------------------------------------------------------|
-| `compute.graph.structure`        | `github.com/vitche/go_compute_graph/graph`          | `Graph`, `Node`, `BaseNode`, `Synapse`, `SpreadNode`, `SubgraphActivationNode` |
-| `compute.graph.activation`       | `github.com/vitche/go_compute_graph/graph`          | `Activation`, `Activate`                                                  |
-| `compute.graph.profile`          | `github.com/vitche/go_compute_graph/profile`        | `NewProfileGraph`, `ProfileNode`, `Delta`                                 |
-| `compute.graph.visualization`    | `github.com/vitche/go_compute_graph/visualization`  | `GraphvizNode`                                                            |
+| Python module                   | Go package                                           | Contents                                                                       |
+|---------------------------------|------------------------------------------------------|--------------------------------------------------------------------------------|
+| `compute.graph.structure`       | `github.com/vitche/go_compute_graph/graph`           | `Graph`, `Node`, `BaseNode`, `Synapse`, `SpreadNode`, `SubgraphActivationNode` |
+| `compute.graph.activation`      | `github.com/vitche/go_compute_graph/graph`           | `Activation`, `Activate`                                                       |
+| `compute.graph.profile`         | `github.com/vitche/go_compute_graph/profile`         | `NewProfileGraph`, `ProfileNode`, `Delta`                                      |
+| `compute.graph.visualization`   | `github.com/vitche/go_compute_graph/visualization`   | `GraphvizNode`                                                                 |
 
 `structure` and `activation` share one Go package, because they reference each other: `SubgraphActivationNode` uses
 `Activation`. Go does not allow import cycles.
 
 ## Core concepts
 
-| Concept        | Meaning                                                                                                                         |
-|----------------|---------------------------------------------------------------------------------------------------------------------------------|
-| **Node**       | A processing unit. It holds a list of pending **arguments** (its input buffer) and an ordered list of outgoing **synapses**.     |
-| **Synapse**    | A directed edge pointing to exactly one target node. Writing to a synapse appends data to the target's arguments.                |
-| **Graph**      | An insertion-ordered list of nodes plus a linear chain: each `Add`ed node is linked from the previously added one.               |
-| **Activation** | Runs a node: `Process`, then `Read` (take and clear) the arguments, then write them to every synapse in order.                   |
-| **Fork**       | Starts a sub-graph branching from the current node. The sub-graph runs through a `SubgraphActivationNode`.                         |
-| **Spread**     | A `SpreadNode` sends each input item separately to each target and activates the target once per item.                           |
-| **Profile**    | A `ProfileNode` sink attached to every node accumulates `Delta{Amount, Time}` records found in that node's output.               |
+| Concept        | Meaning                                                                                                                      |
+|----------------|------------------------------------------------------------------------------------------------------------------------------|
+| **Node**       | A processing unit. It holds a list of pending **arguments** (its input buffer) and an ordered list of outgoing **synapses**. |
+| **Synapse**    | A directed edge pointing to exactly one target node. Writing to a synapse appends data to the target's arguments.            |
+| **Graph**      | An insertion-ordered list of nodes plus a linear chain: each `Add`ed node is linked from the previously added one.           |
+| **Activation** | Runs a node: `Process`, then `Read` (take and clear) the arguments, then write them to every synapse in order.               |
+| **Fork**       | Starts a sub-graph branching from the current node. The sub-graph runs through a `SubgraphActivationNode`.                   |
+| **Spread**     | A `SpreadNode` sends each input item separately to each target and activates the target once per item.                       |
+| **Profile**    | A `ProfileNode` sink attached to every node accumulates `Delta{Amount, Time}` records found in that node's output.           |
 
 Data is always a list: `[]any` in Go, `list` in Python.
 
@@ -405,20 +405,20 @@ The traversal matches Python's:
 
 ## Differences from the Python implementation
 
-| Python                                         | Go                                                         | Reason                                                                                          |
-|------------------------------------------------|------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
-| `class X(Node)` overriding `process()`         | `type X struct{ graph.BaseNode }` + `Process() error`      | Go uses embedding instead of inheritance                                                        |
-| `node.activate()`                              | `graph.Activate(node)`                                     | Embedded methods are not virtual: a `BaseNode.Activate` method could not call the outer type's `Process` |
-| `Node.add(synapse)` returns `self`             | `Add(synapse)` returns nothing                             | With embedding, the method could only return the inner `*BaseNode`, not the outer node          |
-| `process()` returns `None`                     | `Process() error`; `Activate`/`Iterate` return `error`     | Idiomatic error propagation instead of exceptions                                               |
-| `AttributeError` on an empty graph             | `ErrEmptyGraph`                                            | Same cause, reported as an error value                                                          |
-| `self.__class__()` in `fork`                   | sub-graph inherits `g`'s `Option`s                         | Go has no dynamic class construction                                                            |
-| `ProfileGraph` subclass                        | `profile.NewProfileGraph()` = `graph.New(WithAddHook(...))`| Composition instead of overriding `add`                                                         |
-| `{"amount": n, "time": s}` dict                | `profile.Delta{Amount, Time}`                              | Typed struct; `Time` is a `time.Duration`                                                       |
-| `graph.nodes` attribute                        | `g.Nodes()`                                                | Encapsulated field                                                                              |
-| `graphviz` PyPI dependency                     | DOT written natively, `dot` binary for rendering           | No third-party Go dependency                                                                    |
-| shared class-level `__opened` set              | visited set per `Process` call                             | Avoids global state                                                                             |
-| —                                              | `FuncNode`, `graph.Iterate`, `GraphvizNode.DOT()`          | Go conveniences; they add no new concepts                                                       |
+| Python                                 | Go                                                          | Reason                                                                                                   |
+|----------------------------------------|-------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
+| `class X(Node)` overriding `process()` | `type X struct{ graph.BaseNode }` + `Process() error`       | Go uses embedding instead of inheritance                                                                 |
+| `node.activate()`                      | `graph.Activate(node)`                                      | Embedded methods are not virtual: a `BaseNode.Activate` method could not call the outer type's `Process` |
+| `Node.add(synapse)` returns `self`     | `Add(synapse)` returns nothing                              | With embedding, the method could only return the inner `*BaseNode`, not the outer node                   |
+| `process()` returns `None`             | `Process() error`; `Activate`/`Iterate` return `error`      | Idiomatic error propagation instead of exceptions                                                        |
+| `AttributeError` on an empty graph     | `ErrEmptyGraph`                                             | Same cause, reported as an error value                                                                   |
+| `self.__class__()` in `fork`           | sub-graph inherits `g`'s `Option`s                          | Go has no dynamic class construction                                                                     |
+| `ProfileGraph` subclass                | `profile.NewProfileGraph()` = `graph.New(WithAddHook(...))` | Composition instead of overriding `add`                                                                  |
+| `{"amount": n, "time": s}` dict        | `profile.Delta{Amount, Time}`                               | Typed struct; `Time` is a `time.Duration`                                                                |
+| `graph.nodes` attribute                | `g.Nodes()`                                                 | Encapsulated field                                                                                       |
+| `graphviz` PyPI dependency             | DOT written natively, `dot` binary for rendering            | No third-party Go dependency                                                                             |
+| shared class-level `__opened` set      | visited set per `Process` call                              | Avoids global state                                                                                      |
+| —                                      | `FuncNode`, `graph.Iterate`, `GraphvizNode.DOT()`           | Go conveniences; they add no new concepts                                                                |
 
 ## Testing
 
@@ -430,10 +430,10 @@ go test -race ./...
 
 Compute Graph is part of the same dataflow toolset as the PySyun Pipeline, which is available in both languages:
 
-| Project                 | Python                                                                                                                                       | Golang                                                                   |
-|-------------------------|----------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
-| Compute Graph           | [python-compute-graph](https://github.com/vitche/python-compute-graph)                                                                       | go_compute_graph (this project)                                          |
-| PySyun Pipeline & Chain | [pysyun-timeline](https://github.com/pysyun/pysyun-timeline) (graph pipelines), [pysyun_chain](https://github.com/pysyun/pysyun_chain) (linear chains) | [go_pysyun_pipeline](https://github.com/pysyun/go_pysyun_pipeline) |
+| Project                  | Python                                                                                                                                                 | Golang                                                             |
+|--------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------|
+| Compute Graph            | [python-compute-graph](https://github.com/vitche/python-compute-graph)                                                                                 | go_compute_graph (this project)                                    |
+| PySyun Pipeline & Chain  | [pysyun-timeline](https://github.com/pysyun/pysyun-timeline) (graph pipelines), [pysyun_chain](https://github.com/pysyun/pysyun_chain) (linear chains) | [go_pysyun_pipeline](https://github.com/pysyun/go_pysyun_pipeline) |
 
 How the two differ:
 
