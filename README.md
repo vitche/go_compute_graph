@@ -455,6 +455,16 @@ The traversal matches Python's:
 go test -race ./...
 ```
 
+## Biology
+
+The structure of the library follows a nervous system: a `Node` is a neuron, whose `Drain`, `Processor` and `Source`
+are its dendrites, cell body and axon, and a `Synapse` is a synapse. This is an analogy of structure, and it has limits.
+
+| Document                                           | Contents                                                |
+|----------------------------------------------------|---------------------------------------------------------|
+| [`documentation/biology.md`](documentation/biology.md) | What follows the biology, and what does not.        |
+| [`documentation/isomorphism.md`](documentation/isomorphism.md) | The matches between software and biological terms. |
+
 ## Related projects
 
 Compute Graph is part of the same dataflow toolset as the PySyun Pipeline, which is available in both languages:
