@@ -11,14 +11,16 @@ func NewSpreadNode() *SpreadNode {
 	return &SpreadNode{}
 }
 
-// Process spreads the input over the targets. The first activation error is
-// returned and stops the spreading.
+// Process spreads the input over the targets. The first write or activation
+// error is returned and stops the spreading.
 func (n *SpreadNode) Process() error {
 	data := n.Read()
 	for _, synapse := range n.Synapses() {
 		for _, item := range data {
-			synapse.Write([]any{item})
-			if err := Activate(synapse.Node()); err != nil {
+			if err := synapse.Write([]any{item}); err != nil {
+				return err
+			}
+			if err := Activate(synapse.Drain()); err != nil {
 				return err
 			}
 		}

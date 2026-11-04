@@ -44,9 +44,9 @@ type writeSpy struct {
 	processed int
 }
 
-func (w *writeSpy) Write(data []any) {
+func (w *writeSpy) Write(data []any) error {
 	w.writes = append(w.writes, data)
-	w.BaseNode.Write(data)
+	return w.BaseNode.Write(data)
 }
 
 func (w *writeSpy) Process() error {

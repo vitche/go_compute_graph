@@ -54,9 +54,10 @@ type orderSpy struct {
 	log  *[]string
 }
 
-func (o *orderSpy) Write(data []any) {
+func (o *orderSpy) Write(data []any) error {
 	*o.log = append(*o.log, o.name)
 	o.BaseNode.Write(data)
+	return nil
 }
 
 func TestActivateSynapseOrder(t *testing.T) {

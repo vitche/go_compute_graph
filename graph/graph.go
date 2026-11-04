@@ -103,8 +103,7 @@ func (g *Graph) Write(data []any) error {
 	if g.first == nil {
 		return ErrEmptyGraph
 	}
-	g.first.Write(data)
-	return nil
+	return g.first.Write(data)
 }
 
 // Nodes returns a copy of the node list in insertion order.

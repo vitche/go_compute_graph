@@ -38,7 +38,7 @@ func NewProfileNode() *ProfileNode {
 // Write adds every Delta and non-nil *Delta item of data to the accumulated
 // totals and ignores all other items. It then replaces the pending arguments
 // with []any{p.Delta}, even when data is nil.
-func (p *ProfileNode) Write(data []any) {
+func (p *ProfileNode) Write(data []any) error {
 	for _, item := range data {
 		switch delta := item.(type) {
 		case Delta:
@@ -50,6 +50,7 @@ func (p *ProfileNode) Write(data []any) {
 		}
 	}
 	p.Arguments([]any{p.Delta})
+	return nil
 }
 
 func (p *ProfileNode) add(delta Delta) {

@@ -23,7 +23,7 @@ package requires the Graphviz `dot` executable on `PATH`.
 
 | Python module                   | Go package                                           | Contents                                                                       |
 |---------------------------------|------------------------------------------------------|--------------------------------------------------------------------------------|
-| `compute.graph.structure`       | `github.com/vitche/go_compute_graph/graph`           | `Graph`, `Node`, `BaseNode`, `Synapse`, `SpreadNode`, `SubgraphActivationNode` |
+| `compute.graph.structure`       | `github.com/vitche/go_compute_graph/graph`           | `Graph`, `Node`, `Source`, `Processor`, `Drain`, `BaseNode`, `Synapse`, `SpreadNode`, `SubgraphActivationNode` |
 | `compute.graph.activation`      | `github.com/vitche/go_compute_graph/graph`           | `Activation`, `Activate`                                                       |
 | `compute.graph.profile`         | `github.com/vitche/go_compute_graph/profile`         | `NewProfileGraph`, `ProfileNode`, `Delta`                                      |
 | `compute.graph.visualization`   | `github.com/vitche/go_compute_graph/visualization`   | `GraphvizNode`                                                                 |
@@ -36,7 +36,8 @@ package requires the Graphviz `dot` executable on `PATH`.
 | Concept        | Meaning                                                                                                                      |
 |----------------|------------------------------------------------------------------------------------------------------------------------------|
 | **Node**       | A processing unit. It holds a list of pending **arguments** (its input buffer) and an ordered list of outgoing **synapses**. |
-| **Synapse**    | A directed edge pointing to exactly one target node. Writing to a synapse appends data to the target's arguments.            |
+| **Source, Processor, Drain** | The parts of a node: `Read` gives data out, `Process` does the work, `Write` takes data in.                    |
+| **Synapse**    | A directed edge pointing to exactly one target. It only uses the target's `Drain` part, which may lead elsewhere than a local node. |
 | **Graph**      | An insertion-ordered list of nodes plus a linear chain: each `Add`ed node is linked from the previously added one.           |
 | **Activation** | Runs a node: `Process`, then `Read` (take and clear) the arguments, then write them to every synapse in order.               |
 | **Fork**       | Starts a sub-graph branching from the current node. The sub-graph runs through a `SubgraphActivationNode`.                   |
@@ -202,8 +203,8 @@ func (w *Worker) Process() error {
 
 The semantics match the Python implementation exactly. They are worth knowing before you build a graph:
 
-1. **Writing never activates.** `Synapse.Write` and `Node.Write` only append to the target's arguments. A node runs
-   only when something activates it.
+1. **Writing never activates.** `Synapse.Write` and `Node.Write` only pass data to the target. A node runs only when
+   something activates it.
 2. **Exactly three things activate nodes:**
     - an explicit `graph.Activate(node)` call;
     - `Activation{}.Iterate(nodes)` / `graph.Iterate(nodes)`, which activates nodes in slice order. Because
@@ -214,7 +215,7 @@ The semantics match the Python implementation exactly. They are worth knowing be
        `BaseNode.Process` is a no-op, so a plain node passes its input through unchanged.
     2. `data := n.Read()` takes the output and clears the buffer.
     3. `s.Write(data)` runs for every synapse, in the order the synapses were added. The same slice goes to every
-       target.
+       target. The first error stops the activation, and the synapses after it get no data.
 4. **Ordering** is insertion order everywhere: graph nodes, synapses, and spread items. A `SpreadNode` loops over
    synapses first, then over items.
 5. **No caching, no parallelism.** Every activation recomputes. A graph runs on the calling goroutine. Nodes may use
@@ -234,17 +235,34 @@ The semantics match the Python implementation exactly. They are worth knowing be
 
 #### `Node`
 
+A node is the aggregate of three parts:
+
 ```go
+type Source interface {
+	Read() []any // return the pending arguments and clear them
+}
+
+type Processor interface {
+	Process() error // node logic; no-op by default
+}
+
+type Drain interface {
+	Write(data []any) error // append data to the pending arguments; nil is ignored
+}
+
 type Node interface {
-	Add(synapse *Synapse)      // append an outgoing synapse
-	Arguments(value []any)     // replace the pending arguments
-	Read() []any               // return the pending arguments and clear them
-	Write(data []any)          // append data to the pending arguments; nil is ignored
-	Initialize()               // lifecycle hook; no-op by default, never called by the framework
-	Process() error            // node logic; no-op by default
-	Synapses() []*Synapse      // outgoing synapses, in insertion order
+	Source
+	Processor
+	Drain
+	Add(synapse *Synapse)  // append an outgoing synapse
+	Arguments(value []any) // replace the pending arguments
+	Initialize()           // lifecycle hook; no-op by default, never called by the framework
+	Synapses() []*Synapse  // outgoing synapses, in insertion order
 }
 ```
+
+A synapse needs only the `Drain` of its target, so a type which leads elsewhere, such as to another process, can be a
+target without being a whole node.
 
 #### `BaseNode`
 
@@ -270,26 +288,34 @@ Adapts a function to a node. `Process` reads the arguments, calls `fn`, and stor
 #### `Activate`, `Activation`, `Iterate`
 
 ```go
-func Activate(node Node) error              // Python: node.activate()
+func Activate(target Drain) error            // Python: node.activate()
 
 type Activation struct{}
 func (Activation) Iterate(nodes []Node) error // Python: Activation().iterate(nodes)
 
 func Iterate(nodes []Node) error             // shorthand for Activation{}.Iterate(nodes)
+
+type Activator interface {                   // activates in its own way
+	Activate() error
+}
 ```
 
 `Activate` is a function, not a method. See [Differences](#differences-from-the-python-implementation) for why.
 `Activate(nil)` returns `ErrNilNode`. `Iterate` stops at the first error and returns it.
 
+`Activate` uses the `Activate` method of an `Activator` instead of its default steps. A `Node` runs the default steps,
+and any other `Drain` has nothing to run.
+
 #### `Synapse`
 
 ```go
-type Synapse struct { /* target node */ }
+type Synapse struct { /* target */ }
 
 func NewSynapse() *Synapse
-func (s *Synapse) Add(node Node) *Synapse   // set the target (overwrites); returns s for chaining
-func (s *Synapse) Node() Node               // the target
-func (s *Synapse) Write(data []any)         // target.Write(data); panics if no target is set
+func (s *Synapse) Add(drain Drain) *Synapse // set the target (overwrites); returns s for chaining
+func (s *Synapse) Node() Node               // the target, or nil if it is not a whole Node
+func (s *Synapse) Drain() Drain             // the target
+func (s *Synapse) Write(data []any) error   // target.Write(data); panics if no target is set
 ```
 
 Typical use, same as Python: `a.Add(graph.NewSynapse().Add(b))`.
@@ -303,7 +329,7 @@ func NewSpreadNode() *SpreadNode
 ```
 
 `Process` reads its input and, for each synapse and each item, writes `[]any{item}` to the target and activates the
-target immediately. Errors from target activation are returned.
+target immediately. Errors from writing and from target activation are returned.
 
 #### `SubgraphActivationNode`
 
@@ -369,8 +395,8 @@ type ProfileNode struct {
 }
 
 func NewProfileNode() *ProfileNode
-func (p *ProfileNode) Write(data []any) // adds every Delta / *Delta item to p.Delta,
-                                        // then sets Arguments([]any{p.Delta})
+func (p *ProfileNode) Write(data []any) error // adds every Delta / *Delta item to p.Delta,
+                                              // then sets Arguments([]any{p.Delta})
 
 func NewProfileGraph(options ...graph.Option) *graph.Graph
 ```
@@ -398,6 +424,7 @@ The traversal matches Python's:
 - It is depth-first from the Graphviz node and visits each node once.
 - `ProfileNode` neighbours are not drawn. Their pending delta is read (and therefore consumed) and becomes the label of
   the node's outgoing edges, in the format `"+3 (N), 0.25 (s)"`. The `+` appears only for positive amounts.
+- A target which is not a whole node is a leaf, drawn if it implements `fmt.Stringer` and skipped otherwise.
 - Node names come from `String()` if the node implements `fmt.Stringer`, and from `"%T@%p"` otherwise. This takes the
   place of Python's default object `repr`.
 
@@ -411,6 +438,8 @@ The traversal matches Python's:
 | `node.activate()`                      | `graph.Activate(node)`                                      | Embedded methods are not virtual: a `BaseNode.Activate` method could not call the outer type's `Process` |
 | `Node.add(synapse)` returns `self`     | `Add(synapse)` returns nothing                              | With embedding, the method could only return the inner `*BaseNode`, not the outer node                   |
 | `process()` returns `None`             | `Process() error`; `Activate`/`Iterate` return `error`      | Idiomatic error propagation instead of exceptions                                                        |
+| `write()` returns `None`               | `Write(data) error`, on `Node` and `Synapse`                | A write may fail when the target is remote                                                               |
+| a synapse's target is a `Node`         | a synapse's target is a `Drain`, a part of `Node`           | A target can lead elsewhere than a local node                                                            |
 | `AttributeError` on an empty graph     | `ErrEmptyGraph`                                             | Same cause, reported as an error value                                                                   |
 | `self.__class__()` in `fork`           | sub-graph inherits `g`'s `Option`s                          | Go has no dynamic class construction                                                                     |
 | `ProfileGraph` subclass                | `profile.NewProfileGraph()` = `graph.New(WithAddHook(...))` | Composition instead of overriding `add`                                                                  |

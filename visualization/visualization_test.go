@@ -156,6 +156,40 @@ func TestDOTSkipsNilSynapses(t *testing.T) {
 	}
 }
 
+// namedDrain is a target which is not a Node, with a name.
+type namedDrain struct{ name string }
+
+func (d namedDrain) Write([]any) error { return nil }
+func (d namedDrain) String() string    { return d.name }
+
+// bareDrain is a target which is not a Node, without a name.
+type bareDrain struct{}
+
+func (bareDrain) Write([]any) error { return nil }
+
+func TestDOTDrawsANamedDrainAsALeaf(t *testing.T) {
+	v := NewGraphvizNode()
+	a := &named{name: "a"}
+	a.Add(graph.NewSynapse().Add(namedDrain{name: "remote"}))
+	v.Add(graph.NewSynapse().Add(a))
+
+	dot := v.DOT()
+	if !strings.Contains(dot, `"a" -> "remote"`) {
+		t.Fatalf("no edge to the drain in:\n%s", dot)
+	}
+}
+
+func TestDOTSkipsAnUnnamedDrain(t *testing.T) {
+	v := NewGraphvizNode()
+	a := &named{name: "a"}
+	a.Add(graph.NewSynapse().Add(bareDrain{}))
+	v.Add(graph.NewSynapse().Add(a))
+
+	if dot := v.DOT(); strings.Count(dot, "->") != 1 {
+		t.Fatalf("expected only the edge to a in:\n%s", dot)
+	}
+}
+
 func TestNodeNameFallback(t *testing.T) {
 	n := graph.NewNode()
 	want := fmt.Sprintf("*graph.BaseNode@%p", n)

@@ -124,6 +124,13 @@ func traverse(b *strings.Builder, node graph.Node, opened map[graph.Node]bool) {
 		}
 		neighbor := synapse.Node()
 		if neighbor == nil {
+			// A target which is not a whole node is a leaf: there is nothing
+			// to traverse, and it is drawn when it can name itself.
+			if stringer, ok := synapse.Drain().(fmt.Stringer); ok {
+				name := quote(stringer.String())
+				fmt.Fprintf(b, "\t%s\n", name)
+				fmt.Fprintf(b, "\t%s -> %s [label=%s]\n", quote(nodeName(node)), name, quote(label))
+			}
 			continue
 		}
 		if _, ok := neighbor.(*profile.ProfileNode); ok {

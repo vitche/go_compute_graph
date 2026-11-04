@@ -15,26 +15,51 @@ var ErrEmptyGraph = errors.New("graph: graph has no nodes")
 // ErrNilNode is returned by Activate when it is given a nil node.
 var ErrNilNode = errors.New("graph: nil node")
 
-// Node is a processing unit of the compute graph. It holds a list of pending
-// arguments (its input buffer) and an ordered list of outgoing synapses.
+// Source is the part of a Node which gives data out.
+type Source interface {
+	// Read returns the pending arguments and clears them.
+	Read() []any
+}
+
+// Processor is the part of a Node which holds its logic.
+type Processor interface {
+	// Process typically consumes the input with Read and stores the output
+	// with Arguments. The default is a no-op, which passes the input through
+	// unchanged.
+	Process() error
+}
+
+// Drain is the part of a Node which takes data in. It is all a Synapse needs
+// from its target.
+type Drain interface {
+	// Write appends data to the pending arguments; nil is ignored.
+	Write(data []any) error
+}
+
+// Activator is implemented by a target which activates in its own way.
+// Activate uses it instead of the default steps. It is a separate interface
+// because embedded methods are not virtual: a method on BaseNode could not
+// call the Process method of the type that embeds it.
+type Activator interface {
+	Activate() error
+}
+
+// Node is a processing unit of the compute graph: the aggregate of a Source,
+// a Processor and a Drain. It holds a list of pending arguments (its input
+// buffer) and an ordered list of outgoing synapses.
 //
 // Custom nodes embed BaseNode and override Process.
 type Node interface {
+	Source
+	Processor
+	Drain
 	// Add appends an outgoing synapse.
 	Add(synapse *Synapse)
 	// Arguments replaces the pending arguments.
 	Arguments(value []any)
-	// Read returns the pending arguments and clears them.
-	Read() []any
-	// Write appends data to the pending arguments; nil is ignored.
-	Write(data []any)
 	// Initialize is a lifecycle hook. It is a no-op by default and is never
 	// called by the framework (kept for compatibility with the Python API).
 	Initialize()
-	// Process holds the node logic. It typically consumes its input with Read
-	// and stores its output with Arguments. The default is a no-op, which
-	// passes the input through unchanged.
-	Process() error
 	// Synapses returns the outgoing synapses in insertion order.
 	Synapses() []*Synapse
 }
@@ -73,11 +98,12 @@ func (n *BaseNode) Read() []any {
 // The full slice expression forces append to allocate instead of writing
 // into the spare capacity of a slice that was passed to Arguments, so the
 // caller's backing array is never modified.
-func (n *BaseNode) Write(data []any) {
+func (n *BaseNode) Write(data []any) error {
 	if data == nil {
-		return
+		return nil
 	}
 	n.arguments = append(n.arguments[:len(n.arguments):len(n.arguments)], data...)
+	return nil
 }
 
 // Initialize is a no-op lifecycle hook.

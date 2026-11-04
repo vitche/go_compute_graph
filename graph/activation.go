@@ -1,21 +1,32 @@
 package graph
 
-// Activate runs a node: it calls Process, then reads (takes and clears) the
-// node's arguments and writes them to every synapse in insertion order.
+// Activate runs a target. An Activator activates in its own way. A Node runs
+// the default steps: it calls Process, then reads (takes and clears) the node's
+// arguments and writes them to every synapse in insertion order, stopping at
+// the first error. Any other Drain has nothing to run.
 //
 // This is the equivalent of Python's node.activate(). It is a function rather
 // than a method because embedded methods in Go are not virtual: a method on
 // BaseNode could not call the Process method of the type that embeds it.
-func Activate(node Node) error {
-	if node == nil {
+func Activate(target Drain) error {
+	if target == nil {
 		return ErrNilNode
+	}
+	if activator, ok := target.(Activator); ok {
+		return activator.Activate()
+	}
+	node, ok := target.(Node)
+	if !ok {
+		return nil
 	}
 	if err := node.Process(); err != nil {
 		return err
 	}
 	data := node.Read()
 	for _, synapse := range node.Synapses() {
-		synapse.Write(data)
+		if err := synapse.Write(data); err != nil {
+			return err
+		}
 	}
 	return nil
 }
